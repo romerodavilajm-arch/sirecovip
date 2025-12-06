@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Copy-Item \"d:\\Documentos de Chema\\Proyects\\sirecovip-frontend\\.env.example\" -Destination \"d:\\Documentos de Chema\\Proyects\\sirecovip-frontend\\.env\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

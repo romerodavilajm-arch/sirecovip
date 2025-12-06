@@ -1,0 +1,11 @@
+services:
+  frontend:
+    build: .
+    container_name: sirecovip_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src       # Hot-Reload
+      - /app/node_modules    # Usar módulos de linux
+    environment:
+      - VITE_API_URL=http://localhost:3000/api
