@@ -1,164 +1,191 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   Users, Store, Eye, CheckCircle, AlertTriangle, Clock, TrendingUp,
-  MapPin, Calendar, User, FileText, Target
+  MapPin, Calendar, User, FileText, Mail, Shield, Activity
 } from 'lucide-react';
 import { Card, Badge } from '../../components/ui';
 import SidebarLayout from '../../components/layouts/SidebarLayout';
+import merchantService from '../../services/merchantService';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const isInspector = user?.role === 'inspector';
   const isCoordinator = user?.role === 'coordinator';
 
-  // Métricas para Inspector
-  const inspectorMetrics = [
-    {
-      title: 'Mis Registros',
-      value: '45',
-      subtitle: 'Total de comerciantes',
-      icon: Store,
-      bgColor: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-    },
-    {
-      title: 'Sin Foco',
-      value: '32',
-      subtitle: '71% del total',
-      icon: CheckCircle,
-      bgColor: 'bg-green-50',
-      iconColor: 'text-green-600',
-    },
-    {
-      title: 'En Observación',
-      value: '9',
-      subtitle: '20% del total',
-      icon: Eye,
-      bgColor: 'bg-amber-50',
-      iconColor: 'text-amber-600',
-    },
-    {
-      title: 'Focos Detectados',
-      value: '4',
-      subtitle: '9% del total',
-      icon: AlertTriangle,
-      bgColor: 'bg-red-50',
-      iconColor: 'text-red-600',
-    },
-  ];
+  // Estado para datos de comerciantes
+  const [merchants, setMerchants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Métricas para Coordinador
-  const coordinatorMetrics = [
-    {
-      title: 'Total Comerciantes',
-      value: '1,234',
-      subtitle: '+12% vs mes anterior',
-      icon: Store,
-      bgColor: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-      trend: 'up',
-    },
-    {
-      title: 'Sin Foco',
-      value: '856',
-      subtitle: '69% del total',
-      icon: CheckCircle,
-      bgColor: 'bg-green-50',
-      iconColor: 'text-green-600',
-      trend: 'up',
-    },
-    {
-      title: 'En Observación',
-      value: '247',
-      subtitle: '20% del total',
-      icon: Eye,
-      bgColor: 'bg-amber-50',
-      iconColor: 'text-amber-600',
-      trend: 'neutral',
-    },
-    {
-      title: 'Focos Detectados',
-      value: '131',
-      subtitle: '11% del total',
-      icon: AlertTriangle,
-      bgColor: 'bg-red-50',
-      iconColor: 'text-red-600',
-      trend: 'down',
-    },
-  ];
+  // Cargar datos de comerciantes
+  useEffect(() => {
+    const fetchMerchants = async () => {
+      try {
+        setLoading(true);
+        const data = await merchantService.getMerchants();
+        setMerchants(data);
+        setError(null);
+      } catch (err) {
+        console.error('Error loading merchants:', err);
+        setError('Error al cargar los datos');
+        setMerchants([]);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // Datos personales del inspector (dummy data)
-  const inspectorProfile = {
-    name: user?.name || 'Juan Pérez',
-    email: user?.email || 'juan.perez@sirecovip.gob.pe',
-    zone: 'Centro',
-    phone: '+51 987 654 321',
-    dni: '12345678',
-    startDate: '2024-01-15',
+    fetchMerchants();
+  }, []);
+
+  // Calcular métricas para Inspector (filtradas por usuario actual)
+  const getInspectorMetrics = () => {
+    const myMerchants = merchants.filter(m => m.registered_by === user?.id);
+    const total = myMerchants.length;
+    const sinFoco = myMerchants.filter(m => m.status === 'sin-foco').length;
+    const enObservacion = myMerchants.filter(m => m.status === 'en-observacion').length;
+    const focos = myMerchants.filter(m => m.status === 'foco-detectado').length;
+
+    return [
+      {
+        title: 'Mis Registros',
+        value: total.toString(),
+        subtitle: 'Total de comerciantes',
+        icon: Store,
+        bgColor: 'bg-blue-50',
+        iconColor: 'text-blue-600',
+      },
+      {
+        title: 'Sin Foco',
+        value: sinFoco.toString(),
+        subtitle: total > 0 ? `${Math.round((sinFoco / total) * 100)}% del total` : '0%',
+        icon: CheckCircle,
+        bgColor: 'bg-green-50',
+        iconColor: 'text-green-600',
+      },
+      {
+        title: 'En Observación',
+        value: enObservacion.toString(),
+        subtitle: total > 0 ? `${Math.round((enObservacion / total) * 100)}% del total` : '0%',
+        icon: Eye,
+        bgColor: 'bg-amber-50',
+        iconColor: 'text-amber-600',
+      },
+      {
+        title: 'Focos Detectados',
+        value: focos.toString(),
+        subtitle: total > 0 ? `${Math.round((focos / total) * 100)}% del total` : '0%',
+        icon: AlertTriangle,
+        bgColor: 'bg-red-50',
+        iconColor: 'text-red-600',
+      },
+    ];
   };
 
-  // Actividad reciente del inspector
-  const inspectorActivity = [
-    {
-      id: 1,
-      merchant: 'Bodega El Sol',
-      action: 'Registré nuevo comerciante',
-      status: 'sin-foco',
-      time: 'Hace 2 horas',
-    },
-    {
-      id: 2,
-      merchant: 'Restaurant La Mar',
-      action: 'Actualicé estado',
-      status: 'en-observacion',
-      time: 'Ayer',
-    },
-    {
-      id: 3,
-      merchant: 'Panadería San José',
-      action: 'Completé inspección',
-      status: 'aprobado',
-      time: 'Hace 2 días',
-    },
-  ];
+  // Calcular métricas para Coordinador (todos los comerciantes)
+  const getCoordinatorMetrics = () => {
+    const total = merchants.length;
+    const sinFoco = merchants.filter(m => m.status === 'sin-foco').length;
+    const enObservacion = merchants.filter(m => m.status === 'en-observacion').length;
+    const focos = merchants.filter(m => m.status === 'foco-detectado').length;
 
-  // Actividad reciente del coordinador (dummy data)
-  const coordinatorActivity = [
-    {
-      id: 1,
-      inspector: 'Juan Pérez',
-      action: 'Registró nuevo comerciante',
-      merchant: 'Bodega El Sol',
-      status: 'sin-foco',
-      time: 'Hace 15 minutos',
-    },
-    {
-      id: 2,
-      inspector: 'María García',
-      action: 'Actualizó estado',
-      merchant: 'Restaurant La Mar',
-      status: 'en-observacion',
-      time: 'Hace 1 hora',
-    },
-    {
-      id: 3,
-      inspector: 'Carlos López',
-      action: 'Detectó foco',
-      merchant: 'Pollería El Sabroso',
-      status: 'rechazado',
-      time: 'Hace 2 horas',
-    },
-    {
-      id: 4,
-      inspector: 'Ana Torres',
-      action: 'Completó inspección',
-      merchant: 'Panadería San José',
-      status: 'aprobado',
-      time: 'Hace 3 horas',
-    },
-  ];
+    return [
+      {
+        title: 'Total Comerciantes',
+        value: total.toString(),
+        subtitle: 'En todo el sistema',
+        icon: Store,
+        bgColor: 'bg-blue-50',
+        iconColor: 'text-blue-600',
+        trend: 'up',
+      },
+      {
+        title: 'Sin Foco',
+        value: sinFoco.toString(),
+        subtitle: total > 0 ? `${Math.round((sinFoco / total) * 100)}% del total` : '0%',
+        icon: CheckCircle,
+        bgColor: 'bg-green-50',
+        iconColor: 'text-green-600',
+        trend: 'up',
+      },
+      {
+        title: 'En Observación',
+        value: enObservacion.toString(),
+        subtitle: total > 0 ? `${Math.round((enObservacion / total) * 100)}% del total` : '0%',
+        icon: Eye,
+        bgColor: 'bg-amber-50',
+        iconColor: 'text-amber-600',
+        trend: 'neutral',
+      },
+      {
+        title: 'Focos Detectados',
+        value: focos.toString(),
+        subtitle: total > 0 ? `${Math.round((focos / total) * 100)}% del total` : '0%',
+        icon: AlertTriangle,
+        bgColor: 'bg-red-50',
+        iconColor: 'text-red-600',
+        trend: 'down',
+      },
+    ];
+  };
 
-  // Inspectores activos (solo para coordinador)
+  // Función helper para calcular tiempo relativo
+  const getRelativeTime = (dateString) => {
+    if (!dateString) return 'Hace un momento';
+
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+
+    if (diffInSeconds < 60) return 'Hace un momento';
+    if (diffInSeconds < 3600) return `Hace ${Math.floor(diffInSeconds / 60)} minutos`;
+    if (diffInSeconds < 86400) return `Hace ${Math.floor(diffInSeconds / 3600)} horas`;
+    if (diffInSeconds < 604800) return `Hace ${Math.floor(diffInSeconds / 86400)} días`;
+    return date.toLocaleDateString('es-PE');
+  };
+
+  // Obtener actividad reciente del inspector (datos reales filtrados)
+  const getInspectorActivity = () => {
+    const myMerchants = merchants
+      .filter(m => m.registered_by === user?.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 5);
+
+    return myMerchants.map((merchant, index) => ({
+      id: merchant.id,
+      merchant: merchant.name,
+      action: index === 0 ? 'Registré nuevo comerciante' : 'Actualicé inspección',
+      status: merchant.status || 'sin-foco',
+      time: getRelativeTime(merchant.created_at),
+    }));
+  };
+
+  // Obtener actividad reciente del coordinador (datos reales)
+  const getCoordinatorActivity = () => {
+    return merchants
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 10)
+      .map(merchant => ({
+        id: merchant.id,
+        inspector: merchant.inspector_name || 'Inspector',
+        action: 'Registró nuevo comerciante',
+        merchant: merchant.name,
+        status: merchant.status || 'sin-foco',
+        time: getRelativeTime(merchant.created_at),
+      }));
+  };
+
+  // Datos personales del inspector (usa datos reales del user)
+  const inspectorProfile = {
+    name: user?.name || 'Inspector',
+    email: user?.email || 'inspector@sirecovip.gob.pe',
+    role: 'Inspector de Campo',
+    zone: 'Centro', // TODO: Obtener de la base de datos
+    dni: '12345678', // TODO: Obtener de la base de datos
+    startDate: '2024-01-15', // TODO: Obtener de la base de datos
+  };
+
+  // Inspectores activos (solo para coordinador) - TODO: Obtener de la base de datos
   const activeInspectors = [
     { id: 1, name: 'Juan Pérez', zone: 'Centro', merchants: 45, status: 'active' },
     { id: 2, name: 'María García', zone: 'Norte', merchants: 38, status: 'active' },
@@ -166,8 +193,42 @@ const Dashboard = () => {
     { id: 4, name: 'Ana Torres', zone: 'Este', merchants: 41, status: 'offline' },
   ];
 
-  const metrics = isInspector ? inspectorMetrics : coordinatorMetrics;
-  const recentActivity = isInspector ? inspectorActivity : coordinatorActivity;
+  // Seleccionar datos según el rol
+  const metrics = isInspector ? getInspectorMetrics() : getCoordinatorMetrics();
+  const recentActivity = isInspector ? getInspectorActivity() : getCoordinatorActivity();
+
+  // Loading state
+  if (loading) {
+    return (
+      <SidebarLayout>
+        <div className="flex items-center justify-center h-full min-h-screen">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-gray-600">Cargando datos...</p>
+          </div>
+        </div>
+      </SidebarLayout>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <SidebarLayout>
+        <div className="p-6">
+          <div className="bg-red-50 border-l-4 border-red-500 rounded-md p-4">
+            <div className="flex items-start">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-medium text-red-900">Error al cargar datos</h3>
+                <p className="text-xs text-red-800 mt-1">{error}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </SidebarLayout>
+    );
+  }
 
   return (
     <SidebarLayout>
@@ -254,6 +315,26 @@ const Dashboard = () => {
 
                   <div className="space-y-3">
                     <div className="flex items-start gap-3">
+                      <Mail size={16} className="text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Correo Electrónico</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {inspectorProfile.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <Shield size={16} className="text-gray-400 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-gray-500">Rol</p>
+                        <p className="text-sm font-medium text-gray-900">
+                          {inspectorProfile.role}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
                       <MapPin size={16} className="text-gray-400 mt-0.5" />
                       <div>
                         <p className="text-xs text-gray-500">Zona Asignada</p>
@@ -264,26 +345,13 @@ const Dashboard = () => {
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <FileText size={16} className="text-gray-400 mt-0.5" />
+                      <Activity size={16} className="text-gray-400 mt-0.5" />
                       <div>
-                        <p className="text-xs text-gray-500">DNI</p>
-                        <p className="text-sm font-medium text-gray-900">
-                          {inspectorProfile.dni}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <Calendar size={16} className="text-gray-400 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-gray-500">Fecha de Inicio</p>
-                        <p className="text-sm font-medium text-gray-900">
-                          {new Date(inspectorProfile.startDate).toLocaleDateString('es-PE', {
-                            day: '2-digit',
-                            month: 'long',
-                            year: 'numeric',
-                          })}
-                        </p>
+                        <p className="text-xs text-gray-500">Estado</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          <p className="text-sm font-medium text-green-700">Activo</p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -306,30 +374,40 @@ const Dashboard = () => {
                   </div>
                 </Card.Header>
                 <Card.Content className="p-0">
-                  <div className="divide-y divide-gray-200">
-                    {inspectorActivity.map((activity) => (
-                      <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-gray-900 mb-1">
-                              {activity.merchant}
-                            </p>
-                            <p className="text-sm text-gray-600 mb-2">
-                              {activity.action}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {activity.time}
-                            </p>
+                  {recentActivity.length > 0 ? (
+                    <div className="divide-y divide-gray-200">
+                      {recentActivity.map((activity) => (
+                        <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-gray-900 mb-1">
+                                {activity.merchant}
+                              </p>
+                              <p className="text-sm text-gray-600 mb-2">
+                                {activity.action}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {activity.time}
+                              </p>
+                            </div>
+                            <Badge variant={activity.status} size="sm">
+                              {activity.status === 'sin-foco' && 'Sin Foco'}
+                              {activity.status === 'en-observacion' && 'En Observación'}
+                              {activity.status === 'foco-detectado' && 'Foco Detectado'}
+                            </Badge>
                           </div>
-                          <Badge variant={activity.status} size="sm">
-                            {activity.status === 'sin-foco' && 'Sin Foco'}
-                            {activity.status === 'en-observacion' && 'En Observación'}
-                            {activity.status === 'aprobado' && 'Aprobado'}
-                          </Badge>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center">
+                      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500">No hay registros todavía</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Comienza registrando comerciantes en el mapa
+                      </p>
+                    </div>
+                  )}
                 </Card.Content>
               </Card>
             </div>
@@ -352,37 +430,43 @@ const Dashboard = () => {
                   </div>
                 </Card.Header>
                 <Card.Content className="p-0">
-                  <div className="divide-y divide-gray-200">
-                    {coordinatorActivity.map((activity) => (
-                      <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-sm font-semibold text-gray-900">
-                                {activity.inspector}
+                  {recentActivity.length > 0 ? (
+                    <div className="divide-y divide-gray-200">
+                      {recentActivity.map((activity) => (
+                        <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors duration-150">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-sm font-semibold text-gray-900">
+                                  {activity.inspector}
+                                </p>
+                                <span className="text-sm text-gray-500">·</span>
+                                <p className="text-sm text-gray-600">
+                                  {activity.action}
+                                </p>
+                              </div>
+                              <p className="text-sm text-gray-700 mb-2">
+                                {activity.merchant}
                               </p>
-                              <span className="text-sm text-gray-500">·</span>
-                              <p className="text-sm text-gray-600">
-                                {activity.action}
+                              <p className="text-xs text-gray-500">
+                                {activity.time}
                               </p>
                             </div>
-                            <p className="text-sm text-gray-700 mb-2">
-                              {activity.merchant}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {activity.time}
-                            </p>
+                            <Badge variant={activity.status} size="sm">
+                              {activity.status === 'sin-foco' && 'Sin Foco'}
+                              {activity.status === 'en-observacion' && 'En Observación'}
+                              {activity.status === 'foco-detectado' && 'Foco Detectado'}
+                            </Badge>
                           </div>
-                          <Badge variant={activity.status} size="sm">
-                            {activity.status === 'sin-foco' && 'Sin Foco'}
-                            {activity.status === 'en-observacion' && 'En Observación'}
-                            {activity.status === 'rechazado' && 'Foco Detectado'}
-                            {activity.status === 'aprobado' && 'Aprobado'}
-                          </Badge>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center">
+                      <FileText className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-sm text-gray-500">No hay actividad reciente</p>
+                    </div>
+                  )}
                 </Card.Content>
               </Card>
             </div>
