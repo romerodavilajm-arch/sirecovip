@@ -77,6 +77,10 @@ const createMerchant = async (req, res) => {
     }
 
     // 2. Guardar en Base de Datos
+    // Limitar decimales de coordenadas para evitar overflow (max 6 decimales)
+    const latNumber = latitude ? parseFloat(parseFloat(latitude).toFixed(6)) : null;
+    const lonNumber = longitude ? parseFloat(parseFloat(longitude).toFixed(6)) : null;
+
     const { data, error } = await supabase
       .from('merchants')
       .insert([
@@ -86,8 +90,8 @@ const createMerchant = async (req, res) => {
           address,
           address_references: address_references || null,
           delegation,
-          latitude,
-          longitude,
+          latitude: latNumber,
+          longitude: lonNumber,
           organization_id: organization_id || null,
           schedule_start,
           schedule_end,
@@ -254,14 +258,18 @@ const updateMerchant = async (req, res) => {
     }
 
     // Construir objeto de actualización
+    // Limitar decimales de coordenadas para evitar overflow (max 6 decimales)
+    const latNumber = latitude ? parseFloat(parseFloat(latitude).toFixed(6)) : null;
+    const lonNumber = longitude ? parseFloat(parseFloat(longitude).toFixed(6)) : null;
+
     const updateData = {
       name,
       business,
       address,
       address_references: address_references || null,
       delegation,
-      latitude,
-      longitude,
+      latitude: latNumber,
+      longitude: lonNumber,
       organization_id: organization_id || null,
       schedule_start,
       schedule_end,

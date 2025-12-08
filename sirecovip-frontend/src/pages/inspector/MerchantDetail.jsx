@@ -252,30 +252,36 @@ const MerchantDetail = () => {
 
   // Validar formulario
   const validateForm = () => {
+    const validationErrors = [];
+
     if (!formData.name.trim()) {
-      setError('El nombre del comerciante es obligatorio');
-      return false;
+      validationErrors.push('El nombre del comerciante es obligatorio');
     }
     if (!formData.business.trim()) {
-      setError('El giro del negocio es obligatorio');
-      return false;
+      validationErrors.push('El giro del negocio es obligatorio');
     }
     if (!formData.address.trim()) {
-      setError('La dirección es obligatoria');
-      return false;
+      validationErrors.push('La dirección es obligatoria');
     }
     if (!formData.delegation) {
-      setError('La delegación es obligatoria');
-      return false;
+      validationErrors.push('La delegación es obligatoria');
     }
     if (!formData.latitude || !formData.longitude) {
-      setError('Las coordenadas de ubicación son obligatorias');
-      return false;
+      validationErrors.push('Las coordenadas de ubicación son obligatorias');
     }
     if (!formData.schedule_start || !formData.schedule_end) {
-      setError('El horario de operación es obligatorio');
+      validationErrors.push('El horario de operación es obligatorio');
+    }
+
+    // Si hay errores, mostrarlos
+    if (validationErrors.length > 0) {
+      const errorMessage = validationErrors.join('\n• ');
+      setError(`Por favor completa los siguientes campos:\n• ${errorMessage}`);
+      // Scroll al inicio para ver el error
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return false;
     }
+
     return true;
   };
 
@@ -283,7 +289,16 @@ const MerchantDetail = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Debug logging
+    console.log('🔄 Iniciando guardado...', {
+      isEditMode,
+      formData,
+      hasStallPhoto: !!stallPhoto,
+      documentsCount: documents.length
+    });
+
     if (!validateForm()) {
+      console.log('❌ Validación fallida');
       return;
     }
 
@@ -327,13 +342,25 @@ const MerchantDetail = () => {
       });
 
       // Enviar datos
+      console.log('📤 Enviando datos al servidor...', isEditMode ? 'UPDATE' : 'CREATE');
+      console.log('📊 FormData contents:', {
+        id,
+        endpoint: isEditMode ? `PUT /api/merchants/${id}` : 'POST /api/merchants',
+        hasNewPhoto: !!stallPhoto,
+        newDocumentsCount: documents.length
+      });
+
+      let response;
       if (isEditMode) {
-        await merchantService.updateMerchant(id, formDataToSend);
+        response = await merchantService.updateMerchant(id, formDataToSend);
+        console.log('✅ Comerciante actualizado:', response);
       } else {
-        await merchantService.createMerchant(formDataToSend);
+        response = await merchantService.createMerchant(formDataToSend);
+        console.log('✅ Comerciante creado:', response);
       }
 
       setSuccess(true);
+      console.log('✅ Guardado exitoso, redirigiendo...');
 
       // Redirigir después de 2 segundos
       setTimeout(() => {
@@ -341,8 +368,11 @@ const MerchantDetail = () => {
       }, 2000);
 
     } catch (err) {
-      console.error('Error saving merchant:', err);
-      setError(err.response?.data?.error || 'Error al guardar el comerciante');
+      console.error('❌ Error saving merchant:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Error al guardar el comerciante';
+      setError(errorMessage);
+      // Mostrar alert adicional para debugging
+      alert(`Error al guardar:\n${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -446,10 +476,13 @@ const MerchantDetail = () => {
 
         {/* Mensaje de error global */}
         {error && (
-          <div className="mb-6 bg-red-50 border-l-4 border-red-500 rounded-md p-4">
+          <div className="mb-6 bg-red-50 border-l-4 border-red-500 rounded-md p-4 shadow-md">
             <div className="flex items-start">
-              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
-              <p className="text-sm text-red-800">{error}</p>
+              <AlertCircle className="h-6 w-6 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-red-800 mb-1">Error de Validación</h3>
+                <p className="text-sm text-red-700 whitespace-pre-line">{error}</p>
+              </div>
             </div>
           </div>
         )}

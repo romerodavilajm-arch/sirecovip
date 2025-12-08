@@ -33,14 +33,31 @@ const merchantService = {
   },
 
   /**
-   * Obtiene un comerciante por ID
+   * Obtiene un comerciante por ID con transformación de documentos
    * @param {string} id - ID del comerciante
-   * @returns {Promise} Datos del comerciante
+   * @returns {Promise} Datos del comerciante con documentos transformados
    */
   getMerchantById: async (id) => {
     try {
       const response = await axiosInstance.get(`/merchants/${id}`);
-      return response.data;
+      const data = response.data;
+
+      // Transformar documentos si existen para que coincidan con la estructura esperada
+      if (data.documents && Array.isArray(data.documents)) {
+        data.documents = data.documents.map(doc => ({
+          id: doc.id,
+          name: doc.name || `Documento ${doc.id}`,
+          file_url: doc.file_url,
+          document_type: doc.document_type || 'general',
+          uploaded_at: doc.uploaded_at || doc.created_at,
+          // Mapeo crítico de propiedades
+          size: doc.file_size || null,
+          uploadDate: doc.upload_date || doc.uploaded_at || doc.created_at,
+          url: doc.file_url
+        }));
+      }
+
+      return data;
     } catch (error) {
       console.error(`Error fetching merchant ${id}:`, error);
       throw error;
@@ -75,15 +92,28 @@ const merchantService = {
    */
   updateMerchant: async (id, merchantData) => {
     try {
+      console.log('🔧 merchantService.updateMerchant called:', {
+        id,
+        isFormData: merchantData instanceof FormData,
+        url: `/merchants/${id}`
+      });
+
       // Si es FormData, axios automáticamente establece el Content-Type correcto
       const config = merchantData instanceof FormData
         ? { headers: { 'Content-Type': 'multipart/form-data' } }
         : {};
 
       const response = await axiosInstance.put(`/merchants/${id}`, merchantData, config);
+      console.log('✅ Update successful:', response.data);
       return response.data;
     } catch (error) {
-      console.error(`Error updating merchant ${id}:`, error);
+      console.error(`❌ Error updating merchant ${id}:`, {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method
+      });
       throw error;
     }
   },

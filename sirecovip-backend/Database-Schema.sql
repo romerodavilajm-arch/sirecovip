@@ -95,10 +95,12 @@ CREATE TABLE public.merchants (
 CREATE TABLE public.documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   merchant_id UUID REFERENCES public.merchants(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
+  name TEXT,
+  document_type TEXT DEFAULT 'general',
   file_url TEXT NOT NULL,
   file_size INTEGER,
   upload_date DATE DEFAULT CURRENT_DATE,
+  uploaded_at TIMESTAMPTZ DEFAULT now(),
   uploaded_by UUID REFERENCES public.users(id),
   created_at TIMESTAMPTZ DEFAULT now()
 );
