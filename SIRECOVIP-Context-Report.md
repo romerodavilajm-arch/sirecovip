@@ -652,7 +652,367 @@ El proyecto SIRECOVIP se encuentra en un **estado sólido y funcional** con el *
 
 ---
 
-## 10. 📞 CONTACTO Y MANTENIMIENTO
+## 10. 🚨 PROBLEMAS CRÍTICOS IDENTIFICADOS (2025-12-08)
+
+### 10.1 ❌ Error 404 al Editar Comerciantes
+
+**Síntoma:**
+```
+PUT http://localhost:3000/api/merchants/{id} 404 (Not Found)
+Error: Comerciante no encontrado
+```
+
+**Causa Raíz:**
+Los comerciantes existentes en la base de datos fueron creados ANTES de las migraciones recientes y tienen datos inconsistentes o inválidos.
+
+### 10.2 🔍 Diagnóstico del Problema
+
+#### A. **Discrepancia en ENUM `merchant_status_enum`**
+
+**Schema Original** (`Database-Schema.sql` línea 13):
+```sql
+CREATE TYPE merchant_status_enum AS ENUM (
+  'sin-foco',
+  'en-observacion',
+  'prioritario'
+);
+```
+
+**Valores que Usa el Frontend/Backend:**
+- ✅ `'sin-foco'` - Existe en ENUM
+- ✅ `'en-observacion'` - Existe en ENUM
+- ✅ `'prioritario'` - Existe en ENUM
+- ❌ `'foco-detectado'` - **NO EXISTE** en ENUM
+- ❌ `'rechazado'` - **NO EXISTE** en ENUM
+
+**Problema:** El frontend intenta usar valores de estatus que no están definidos en el ENUM de PostgreSQL, o comerciantes antiguos tienen valores inválidos.
+
+#### B. **Posibles Datos Corruptos en Tabla `merchants`**
+
+Comerciantes antiguos pueden tener:
+- Campos obligatorios con valores `NULL`
+- Coordenadas inválidas o fuera de rango
+- Referencias a organizaciones que ya no existen
+- IDs huérfanos o duplicados
+
+#### C. **Logging Implementado para Debugging**
+
+Se agregó logging completo en el backend (`merchantController.js`):
+
+**getMerchants** (líneas 156-160):
+```javascript
+console.log(`📋 Listando ${data?.length || 0} comerciantes`);
+if (data && data.length > 0) {
+  console.log('🔑 Primeros IDs:', data.slice(0, 3).map(m => m.id));
+}
+```
+
+**getMerchantById** (líneas 173, 186-198):
+```javascript
+console.log(`🔍 Buscando comerciante con ID: ${id}`);
+// ...
+if (error) {
+  console.error(`❌ Error buscando comerciante ${id}:`, error);
+}
+if (!data) {
+  console.log(`⚠️  Comerciante ${id} no encontrado`);
+}
+console.log(`✅ Comerciante ${id} encontrado: ${data.name}`);
+```
+
+**updateMerchant** (líneas 212-225):
+```javascript
+// Verificar que el comerciante existe antes de intentar actualizar
+const { data: existingMerchant, error: checkError } = await supabase
+  .from('merchants')
+  .select('id')
+  .eq('id', id)
+  .single();
+
+if (checkError || !existingMerchant) {
+  console.error(`❌ Comerciante ${id} no encontrado:`, checkError);
+  return res.status(404).json({
+    error: 'Comerciante no encontrado',
+    message: `No se encontró un comerciante con el ID: ${id}`,
+    id: id
+  });
+}
+```
+
+### 10.3 ✅ Pasos de Verificación en Supabase
+
+#### **Paso 1: Verificar ENUM actual**
+
+Ejecuta en **Supabase SQL Editor**:
+
+```sql
+-- Ver valores actuales del ENUM
+SELECT
+  enumlabel as valor_permitido,
+  enumsortorder as orden
+FROM pg_enum
+WHERE enumtypid = 'merchant_status_enum'::regtype
+ORDER BY enumsortorder;
+```
+
+**Resultado Esperado:**
+```
+valor_permitido    | orden
+-------------------|-------
+sin-foco          | 1
+en-observacion    | 2
+prioritario       | 3
+```
+
+**Valores Faltantes:**
+- `'foco-detectado'`
+- `'rechazado'`
+
+---
+
+#### **Paso 2: Verificar datos de comerciantes**
+
+```sql
+-- Contar comerciantes totales
+SELECT COUNT(*) as total_comerciantes
+FROM public.merchants;
+
+-- Ver distribución por estatus
+SELECT
+  status,
+  COUNT(*) as cantidad
+FROM public.merchants
+GROUP BY status
+ORDER BY cantidad DESC;
+
+-- Ver comerciantes con posibles problemas
+SELECT
+  id,
+  name,
+  business,
+  status,
+  CASE
+    WHEN name IS NULL OR name = '' THEN 'Nombre inválido'
+    WHEN business IS NULL THEN 'Giro inválido'
+    WHEN address IS NULL THEN 'Dirección inválida'
+    WHEN delegation IS NULL THEN 'Delegación inválida'
+    WHEN latitude IS NULL OR longitude IS NULL THEN 'Sin coordenadas'
+    ELSE 'OK'
+  END as problema,
+  created_at
+FROM public.merchants
+WHERE
+  name IS NULL OR name = ''
+  OR business IS NULL
+  OR address IS NULL
+  OR delegation IS NULL
+ORDER BY created_at DESC;
+```
+
+---
+
+#### **Paso 3: Verificar IDs específicos problemáticos**
+
+Los siguientes IDs causaron error 404:
+- `dccdfdeb-915f-407f-bb8b-d1eb1eba48cd`
+- `fb3ad858-a9a9-496f-8922-83c4917efb36`
+
+```sql
+-- Verificar si estos comerciantes existen
+SELECT
+  id,
+  name,
+  business,
+  status,
+  created_at,
+  CASE
+    WHEN latitude IS NULL OR longitude IS NULL THEN 'SIN COORDENADAS'
+    ELSE 'CON COORDENADAS'
+  END as coord_status
+FROM public.merchants
+WHERE id IN (
+  'dccdfdeb-915f-407f-bb8b-d1eb1eba48cd',
+  'fb3ad858-a9a9-496f-8922-83c4917efb36'
+);
+```
+
+**Si el resultado está vacío:** Los comerciantes NO EXISTEN en la base de datos.
+
+**Si aparecen:** Verificar sus datos para ver qué está mal.
+
+---
+
+#### **Paso 4: Ver todos los comerciantes actuales**
+
+```sql
+-- Listar todos los comerciantes con información completa
+SELECT
+  id,
+  name,
+  business,
+  status,
+  CASE
+    WHEN latitude IS NOT NULL AND longitude IS NOT NULL
+    THEN CONCAT(latitude::text, ', ', longitude::text)
+    ELSE 'SIN COORDENADAS'
+  END as coordenadas,
+  organization_id,
+  created_at,
+  updated_at
+FROM public.merchants
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+---
+
+### 10.4 🛠️ Soluciones Propuestas
+
+#### **Opción A: Actualizar ENUM (Recomendado si hay datos importantes)**
+
+```sql
+-- Agregar valores faltantes al ENUM
+ALTER TYPE merchant_status_enum ADD VALUE IF NOT EXISTS 'foco-detectado';
+ALTER TYPE merchant_status_enum ADD VALUE IF NOT EXISTS 'rechazado';
+
+-- Verificar que se agregaron
+SELECT enumlabel
+FROM pg_enum
+WHERE enumtypid = 'merchant_status_enum'::regtype;
+```
+
+**NOTA:** En PostgreSQL, agregar valores a un ENUM es irreversible. Si hay un error, necesitas recrear el ENUM.
+
+---
+
+#### **Opción B: Limpiar datos inválidos**
+
+**B1. Solo verificar (NO elimina):**
+```sql
+-- Ver qué comerciantes serían eliminados
+SELECT
+  id,
+  name,
+  business,
+  status,
+  created_at,
+  CASE
+    WHEN name IS NULL OR name = '' THEN 'Nombre inválido'
+    WHEN business IS NULL THEN 'Giro inválido'
+    WHEN address IS NULL THEN 'Dirección inválida'
+    WHEN delegation IS NULL THEN 'Delegación inválida'
+    ELSE 'OK'
+  END as razon_eliminacion
+FROM public.merchants
+WHERE
+  name IS NULL OR name = ''
+  OR business IS NULL
+  OR address IS NULL
+  OR delegation IS NULL;
+```
+
+**B2. Eliminar selectivamente:**
+```sql
+-- ADVERTENCIA: Esto ELIMINA datos
+-- Solo ejecutar si estás seguro
+
+-- Eliminar documentos de comerciantes inválidos
+DELETE FROM public.documents
+WHERE merchant_id IN (
+  SELECT id FROM public.merchants
+  WHERE name IS NULL OR name = ''
+    OR business IS NULL
+    OR address IS NULL
+    OR delegation IS NULL
+);
+
+-- Eliminar comerciantes inválidos
+DELETE FROM public.merchants
+WHERE name IS NULL OR name = ''
+  OR business IS NULL
+  OR address IS NULL
+  OR delegation IS NULL;
+```
+
+---
+
+#### **Opción C: Empezar de cero (Si los datos no son importantes)**
+
+```sql
+-- ADVERTENCIA: Esto ELIMINA TODOS los comerciantes y documentos
+-- Solo para desarrollo/testing
+
+-- Eliminar todos los documentos
+DELETE FROM public.documents;
+
+-- Eliminar todos los comerciantes
+DELETE FROM public.merchants;
+
+-- Reiniciar contadores de organizaciones
+UPDATE public.organizations
+SET
+  member_count = 0,
+  sin_foco = 0,
+  en_observacion = 0,
+  prioritario = 0;
+
+-- Verificar que todo está limpio
+SELECT 'merchants' as tabla, COUNT(*) as registros FROM public.merchants
+UNION ALL
+SELECT 'documents' as tabla, COUNT(*) as registros FROM public.documents;
+```
+
+---
+
+### 10.5 📋 Checklist de Validación Post-Fix
+
+Después de ejecutar cualquier solución, verifica:
+
+#### En Supabase:
+- [ ] ENUM tiene todos los valores necesarios (ejecutar Paso 1)
+- [ ] No hay comerciantes con campos NULL obligatorios (ejecutar Paso 2)
+- [ ] Todos los comerciantes tienen IDs válidos (ejecutar Paso 4)
+
+#### En Backend (Docker logs):
+```bash
+docker-compose restart backend
+docker-compose logs -f backend
+```
+
+Buscar estos mensajes al navegar en el frontend:
+- [ ] `📋 Listando X comerciantes` - Aparece al abrir lista
+- [ ] `🔑 Primeros IDs: [...]` - Muestra IDs reales
+- [ ] `🔍 Buscando comerciante con ID: ...` - Al abrir detalle
+- [ ] `✅ Comerciante ... encontrado: ...` - Confirma que existe
+
+#### En Frontend:
+- [ ] La lista de comerciantes carga sin errores
+- [ ] Puedes hacer clic en "Ver Detalles"
+- [ ] La página de detalle muestra información
+- [ ] Puedes editar y guardar cambios
+- [ ] No hay errores 404 en la consola del navegador
+- [ ] El mapa muestra marcadores (si tiene coordenadas)
+
+---
+
+### 10.6 🔮 Recomendación Final
+
+**Si tienes datos de producción importantes:**
+→ Usar **Opción A** (actualizar ENUM) + **Opción B1** (solo verificar problemas)
+
+**Si estás en desarrollo/testing:**
+→ Usar **Opción C** (empezar de cero) + crear comerciantes nuevos desde el frontend
+
+**En ambos casos:**
+1. Hacer backup de Supabase antes de cualquier cambio
+2. Ejecutar los scripts de verificación (Pasos 1-4) primero
+3. Documentar los resultados
+4. Reiniciar backend después de cambios
+5. Validar con el checklist completo
+
+---
+
+## 11. 📞 CONTACTO Y MANTENIMIENTO
 
 ### Archivos Críticos para Mantener Actualizados
 1. `Database-Schema.sql` - Schema de BD
