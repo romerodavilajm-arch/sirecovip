@@ -1714,7 +1714,424 @@ Triggers:               2
 
 ---
 
+---
+
+## 17. 🚨 PROBLEMAS CRÍTICOS IDENTIFICADOS (2025-12-09) - PÁGINAS VACÍAS Y CRASHES
+
+### 17.1 ❌ **PROBLEMA #1: Rutas Sin Implementar - CRASH AL NAVEGAR**
+
+**Síntoma:** Al hacer clic en ciertos elementos del menú del coordinador, la aplicación muestra una página 404 vacía o se sale completamente.
+
+**Archivo Afectado:** [SidebarLayout.jsx](sirecovip-frontend/src/components/layouts/SidebarLayout.jsx#L34-L38)
+
+**Rutas Problemáticas:**
+
+| Ruta Definida | Elemento del Menú | Estado | Impacto |
+|---|---|---|---|
+| `/app/inspectores` | "Inspectores" | ❌ **NO EXISTE** | Página 404/vacía |
+| `/app/configuracion` | "Configuración" | ❌ **NO EXISTE** | Página 404/vacía |
+
+**Código Problemático (SidebarLayout.jsx líneas 34, 37):**
+```javascript
+// Menú para Coordinador
+{ path: '/app/inspectores', icon: Users, label: 'Inspectores' },  // ❌ NO EXISTE
+// ...
+{ path: '/app/configuracion', icon: Settings, label: 'Configuración' }  // ❌ NO EXISTE
+```
+
+**Solución Requerida:**
+1. **Crear archivos faltantes:**
+   - `sirecovip-frontend/src/pages/coordinator/Inspectores.jsx`
+   - `sirecovip-frontend/src/pages/coordinator/Configuracion.jsx`
+
+2. **Registrar rutas en App.jsx o router principal**
+
+3. **O TEMPORALMENTE:** Ocultar estos elementos del menú hasta implementarlos:
+   ```javascript
+   // Comentar temporalmente estas rutas
+   // { path: '/app/inspectores', icon: Users, label: 'Inspectores' },
+   // { path: '/app/configuracion', icon: Settings, label: 'Configuración' }
+   ```
+
+**Prioridad:** 🔴 **CRÍTICA** - Causa crashes inmediatos en navegación
+
+---
+
+### 17.2 ❌ **PROBLEMA #2: Inconsistencia de Campos `business` vs `business_line` - RENDERIZADO VACÍO**
+
+**Síntoma:** La lista de comerciantes puede mostrar campos vacíos o el filtro de búsqueda no funciona correctamente.
+
+**Archivos Afectados:**
+- [MerchantList.jsx](sirecovip-frontend/src/pages/inspector/MerchantList.jsx#L69)
+- [MapView.jsx](sirecovip-frontend/src/pages/inspector/MapView.jsx#L113)
+
+**Problema:**
+Diferentes componentes usan nombres de campo diferentes para el giro del comerciante:
+
+| Archivo | Campo Usado | Líneas |
+|---|---|---|
+| **MerchantList.jsx** | `merchant.business` | 69, 275 |
+| **MapView.jsx** | `merchant.business_line` | 113, 300, 302, 422, 424 |
+
+**Código Problemático:**
+
+**MerchantList.jsx (línea 69):**
+```javascript
+const filtered = merchants.filter((merchant) => {
+  const matchesSearch =
+    merchant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    merchant.business.toLowerCase().includes(searchTerm.toLowerCase());  // ❌ business
+  // ...
+});
+```
+
+**MapView.jsx (línea 113):**
+```javascript
+merchant.business_line?.toLowerCase().includes(searchQuery.toLowerCase());  // ❌ business_line
+```
+
+**Impacto:**
+- Si la API devuelve `business_line`, MerchantList intentará acceder a `business` (undefined)
+- Los filtros de búsqueda fallarán silenciosamente
+- Los campos se mostrarán vacíos en la tabla
+
+**Solución:**
+1. **Verificar qué campo devuelve la API real** ejecutando:
+   ```sql
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'merchants' AND column_name LIKE '%business%';
+   ```
+
+2. **Estandarizar en TODO el código** usando el campo correcto:
+   - Si es `business`, actualizar MapView.jsx
+   - Si es `business_line`, actualizar MerchantList.jsx y MerchantDetail.jsx
+
+3. **Actualizar merchantService.js** para mapear el campo:
+   ```javascript
+   // Mapeo consistente
+   business: data.business || data.business_line,
+   business_line: data.business_line || data.business
+   ```
+
+**Prioridad:** 🔴 **CRÍTICA** - Causa renderizado vacío y filtros rotos
+
+---
+
+### 17.3 ❌ **PROBLEMA #3: JSON Parsing Sin Error Handling - CRASH AL INICIAR**
+
+**Síntoma:** Si el localStorage contiene datos corruptos, la aplicación crashea al iniciar y muestra pantalla blanca.
+
+**Archivo Afectado:** [AuthContext.jsx](sirecovip-frontend/src/context/AuthContext.jsx#L20-L27)
+
+**Código Problemático (líneas 20-27):**
+```javascript
+useEffect(() => {
+  const storedToken = localStorage.getItem('token');
+  const storedUser = localStorage.getItem('user');
+  if (storedToken && storedUser) {
+    setToken(storedToken);
+    setUser(JSON.parse(storedUser));  // ❌ SIN TRY-CATCH
+  }
+  setLoading(false);
+}, []);
+```
+
+**Problema:**
+- Si `localStorage.getItem('user')` contiene JSON inválido (ej: `"{name:"Juan"` sin cerrar)
+- `JSON.parse()` lanzará un error no capturado
+- La aplicación crasheará completamente
+
+**Solución:**
+```javascript
+useEffect(() => {
+  try {
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+
+    if (storedToken && storedUser) {
+      setToken(storedToken);
+      const parsedUser = JSON.parse(storedUser);  // Puede fallar
+      setUser(parsedUser);
+    }
+  } catch (error) {
+    console.error('❌ Error al cargar datos de sesión:', error);
+    // Limpiar datos corruptos
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  } finally {
+    setLoading(false);
+  }
+}, []);
+```
+
+**Prioridad:** 🔴 **CRÍTICA** - Causa crash al iniciar la aplicación
+
+---
+
+### 17.4 ⚠️ **PROBLEMA #4: Inicialización de Leaflet Sin Error Handling - CRASH EN MAPVIEW**
+
+**Síntoma:** La página del mapa muestra pantalla blanca o error en consola al cargar.
+
+**Archivo Afectado:** [MapView.jsx](sirecovip-frontend/src/pages/inspector/MapView.jsx#L11-L16)
+
+**Código Problemático (líneas 11-16):**
+```javascript
+// Fix para iconos de Leaflet en Vite
+delete L.Icon.Default.prototype._getIconUrl;  // ❌ Sin validación si L existe
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  // ...
+});
+```
+
+**Problema:**
+- Si Leaflet (`L`) no está cargado correctamente, esto causa crash
+- Sin validación de que `L.Icon.Default` existe
+
+**Solución:**
+```javascript
+// Fix para iconos de Leaflet en Vite - con validación
+try {
+  if (typeof L !== 'undefined' && L.Icon && L.Icon.Default) {
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    });
+  }
+} catch (error) {
+  console.error('❌ Error inicializando iconos de Leaflet:', error);
+}
+```
+
+**Prioridad:** 🟡 **ALTA** - Causa crash en página de mapa
+
+---
+
+### 17.5 ⚠️ **PROBLEMA #5: Inconsistencia de Valores de Estatus - DATOS INCORRECTOS**
+
+**Síntoma:** Los reportes muestran conteos incorrectos de comerciantes prioritarios.
+
+**Archivos Afectados:**
+- [Reports.jsx](sirecovip-frontend/src/pages/coordinator/Reports.jsx#L57)
+- [MapView.jsx](sirecovip-frontend/src/pages/inspector/MapView.jsx#L25)
+
+**Problema:**
+Diferentes páginas usan valores diferentes para el mismo estatus:
+
+| Archivo | Valor de Estatus | Línea |
+|---|---|---|
+| **Reports.jsx** | `'prioritario'` | 57, 124 |
+| **MapView.jsx** | `'foco-detectado'` | 25, 136, 151 |
+| **Database-Schema.sql** | `'prioritario'` (ENUM) | 13 |
+
+**Código Problemático:**
+
+**Reports.jsx (línea 57):**
+```javascript
+const irregulares = filteredMerchants.filter(
+  (m) => m.status === 'prioritario'  // ✓ Correcto con BD
+).length;
+```
+
+**MapView.jsx (línea 25):**
+```javascript
+const STATUS_OPTIONS = [
+  { value: 'sin-foco', label: 'Sin Foco', color: '#10B981' },
+  { value: 'en-observacion', label: 'En Observación', color: '#F59E0B' },
+  { value: 'foco-detectado', label: 'Foco Detectado', color: '#EF4444' },  // ❌ INCORRECTO
+];
+```
+
+**Impacto:**
+- MapView permite filtrar por `'foco-detectado'` que no existe en BD
+- Los filtros en MapView no mostrarán comerciantes prioritarios
+- Inconsistencia entre reportes y mapa
+
+**Solución:**
+Actualizar MapView.jsx para usar el valor correcto del ENUM:
+```javascript
+const STATUS_OPTIONS = [
+  { value: 'sin-foco', label: 'Sin Foco', color: '#10B981' },
+  { value: 'en-observacion', label: 'En Observación', color: '#F59E0B' },
+  { value: 'prioritario', label: 'Prioritario', color: '#EF4444' },  // ✅ CORRECTO
+];
+```
+
+**Prioridad:** 🟡 **ALTA** - Causa datos incorrectos en reportes y filtros
+
+---
+
+### 17.6 🟢 **PROBLEMA #6: window.location.reload() - UX POBRE**
+
+**Síntoma:** Al cancelar edición de comerciante, la página se recarga completamente perdiendo scroll position.
+
+**Archivo Afectado:** [MerchantDetail.jsx](sirecovip-frontend/src/pages/inspector/MerchantDetail.jsx#L386)
+
+**Código Problemático (línea 386):**
+```javascript
+const handleCancel = () => {
+  if (confirm('¿Deseas cancelar los cambios? Se perderán todos los datos no guardados.')) {
+    window.location.reload();  // ❌ Práctica pobre
+  }
+};
+```
+
+**Problema:**
+- Recarga completa de la página es lenta
+- Pierde estado de scroll, filtros, etc.
+- No es la forma moderna de revertir cambios en React
+
+**Solución:**
+```javascript
+const handleCancel = () => {
+  if (confirm('¿Deseas cancelar los cambios? Se perderán todos los datos no guardados.')) {
+    // Revertir al estado original
+    if (isEditMode) {
+      // Re-fetch los datos originales
+      fetchMerchantData(id);
+    } else {
+      // Limpiar formulario
+      setFormData(initialFormState);
+      setStallPhoto(null);
+      setDocuments([]);
+    }
+  }
+};
+```
+
+**Prioridad:** 🟢 **MEDIA** - No causa crash pero mala UX
+
+---
+
+### 17.7 📊 **Tabla Resumen de Problemas Críticos**
+
+| # | Problema | Severidad | Tipo | Causa Crash | Causa Página Vacía | Prioridad |
+|---|---|---|---|---|---|---|
+| 1 | Rutas `/app/inspectores` y `/app/configuracion` sin implementar | CRÍTICA | Navegación | ✅ Sí | ✅ Sí | 🔴 |
+| 2 | Campo `business` vs `business_line` inconsistente | CRÍTICA | Renderizado | ❌ No | ✅ Sí | 🔴 |
+| 3 | JSON parsing sin try-catch en AuthContext | CRÍTICA | Inicialización | ✅ Sí | ✅ Sí | 🔴 |
+| 4 | Leaflet initialization sin error handling | ALTA | Renderizado | ✅ Sí | ✅ Sí | 🟡 |
+| 5 | Estatus `'prioritario'` vs `'foco-detectado'` | ALTA | Datos | ❌ No | ⚠️ Parcial | 🟡 |
+| 6 | `window.location.reload()` en cancelación | MEDIA | UX | ❌ No | ❌ No | 🟢 |
+
+---
+
+### 17.8 ✅ **Plan de Corrección Inmediata**
+
+#### **Fase 1: Prevenir Crashes (URGENTE - 1-2 horas)**
+
+1. **Ocultar rutas no implementadas en SidebarLayout.jsx:**
+   ```javascript
+   // Comentar temporalmente
+   // { path: '/app/inspectores', icon: Users, label: 'Inspectores' },
+   // { path: '/app/configuracion', icon: Settings, label: 'Configuración' }
+   ```
+
+2. **Agregar try-catch en AuthContext.jsx:**
+   ```javascript
+   try {
+     setUser(JSON.parse(storedUser));
+   } catch (error) {
+     console.error('Error parsing user data:', error);
+     localStorage.clear();
+   }
+   ```
+
+3. **Proteger inicialización de Leaflet en MapView.jsx:**
+   ```javascript
+   try {
+     if (L && L.Icon && L.Icon.Default) {
+       delete L.Icon.Default.prototype._getIconUrl;
+       // ...
+     }
+   } catch (error) {
+     console.error('Leaflet icon init error:', error);
+   }
+   ```
+
+#### **Fase 2: Corregir Inconsistencias de Datos (IMPORTANTE - 2-3 horas)**
+
+4. **Estandarizar campo de giro:**
+   - Verificar qué campo devuelve la API
+   - Actualizar todos los archivos para usar el mismo campo
+
+5. **Corregir valores de estatus en MapView.jsx:**
+   - Cambiar `'foco-detectado'` a `'prioritario'`
+
+#### **Fase 3: Implementar Páginas Faltantes (RECOMENDADO - 1-2 días)**
+
+6. **Crear `Inspectores.jsx`**
+7. **Crear `Configuracion.jsx`**
+8. **Registrar rutas en router**
+
+---
+
+### 17.9 🔍 **Scripts de Verificación**
+
+#### **A. Verificar Campo de Giro en BD:**
+```sql
+-- Verificar qué campo existe en la tabla merchants
+SELECT column_name, udt_name, is_nullable
+FROM information_schema.columns
+WHERE table_name = 'merchants'
+  AND column_name LIKE '%business%';
+```
+
+#### **B. Verificar Valores de Estatus Válidos:**
+```sql
+-- Ver valores permitidos del ENUM
+SELECT enumlabel as valor_permitido
+FROM pg_enum
+WHERE enumtypid = 'merchant_status_enum'::regtype
+ORDER BY enumsortorder;
+```
+
+#### **C. Verificar Datos de Comerciantes:**
+```sql
+-- Ver qué campos tienen datos reales
+SELECT
+  id,
+  name,
+  CASE
+    WHEN business IS NOT NULL THEN 'Tiene business'
+    WHEN business_line IS NOT NULL THEN 'Tiene business_line'
+    ELSE 'Sin giro'
+  END as campo_giro,
+  status
+FROM public.merchants
+LIMIT 10;
+```
+
+---
+
+### 17.10 📋 **Checklist de Validación Post-Fix**
+
+Después de aplicar las correcciones, verificar:
+
+#### **Prevención de Crashes:**
+- [ ] El menú del coordinador no tiene enlaces rotos
+- [ ] La aplicación inicia correctamente con localStorage vacío
+- [ ] La aplicación inicia correctamente con localStorage corruptos
+- [ ] MapView carga sin errores en consola
+
+#### **Renderizado Correcto:**
+- [ ] MerchantList muestra el giro del comerciante correctamente
+- [ ] Los filtros de búsqueda funcionan en MerchantList
+- [ ] MapView muestra el giro del comerciante en popups
+- [ ] Los filtros de estatus en MapView funcionan
+
+#### **Datos Consistentes:**
+- [ ] Reports muestra conteos correctos de prioritarios
+- [ ] MapView muestra los mismos estatus que la BD
+- [ ] Todos los componentes usan los mismos nombres de campos
+
+---
+
 **Fin del Reporte Técnico**
 **Generado:** 2025-12-09
-**Versión:** 2.0
+**Versión:** 2.1
+**Última Actualización:** 2025-12-09 - Agregada Sección 17 (Problemas Críticos de Crashes y Páginas Vacías)
 
