@@ -7,13 +7,19 @@ import { Card, Button, Input, Select, Badge } from '../../components/ui';
 import SidebarLayout from '../../components/layouts/SidebarLayout';
 import merchantService from '../../services/merchantService';
 
-// Fix para los iconos por defecto de Leaflet
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+// Fix para los iconos por defecto de Leaflet - con validación
+try {
+  if (typeof L !== 'undefined' && L.Icon && L.Icon.Default) {
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    });
+  }
+} catch (error) {
+  console.error('❌ Error inicializando iconos de Leaflet:', error);
+}
 
 // Función para obtener el color del marcador según el estatus
 const getMarkerColor = (status) => {
@@ -110,7 +116,7 @@ const MapView = () => {
         searchQuery === '' ||
         merchant.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         merchant.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        merchant.business_line?.toLowerCase().includes(searchQuery.toLowerCase());
+        merchant.business?.toLowerCase().includes(searchQuery.toLowerCase());
 
       // Filtro de estatus
       const matchesStatus = filterStatus === 'all' || merchant.status === filterStatus;
@@ -297,9 +303,9 @@ const MapView = () => {
                               <h3 className="font-semibold text-gray-900 text-sm mb-1">
                                 {merchant.name}
                               </h3>
-                              {merchant.business_line && (
+                              {merchant.business && (
                                 <p className="text-xs text-gray-600">
-                                  {merchant.business_line}
+                                  {merchant.business}
                                 </p>
                               )}
                             </div>
@@ -419,9 +425,9 @@ const MapView = () => {
                           <p className="text-caption text-gray-600 mt-0.5 truncate">
                             {merchant.address || 'Sin dirección'}
                           </p>
-                          {merchant.business_line && (
+                          {merchant.business && (
                             <p className="text-caption text-gray-500 mt-0.5 truncate">
-                              {merchant.business_line}
+                              {merchant.business}
                             </p>
                           )}
                         </div>

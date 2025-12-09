@@ -31,10 +31,10 @@ const SidebarLayout = ({ children }) => {
     coordinator: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
       { icon: Map, label: 'Mapa General', path: '/app/map' },
-      { icon: Users, label: 'Inspectores', path: '/app/inspectores' },
+      // { icon: Users, label: 'Inspectores', path: '/app/inspectores' }, // TODO: Implementar página
       { icon: Store, label: 'Comerciantes', path: '/app/merchants' },
       { icon: FileText, label: 'Reportes', path: '/app/reports' },
-      { icon: Settings, label: 'Configuración', path: '/app/configuracion' },
+      // { icon: Settings, label: 'Configuración', path: '/app/configuracion' }, // TODO: Implementar página
     ],
   };
 

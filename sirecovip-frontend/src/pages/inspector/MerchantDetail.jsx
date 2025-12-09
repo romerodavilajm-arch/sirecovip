@@ -379,11 +379,47 @@ const MerchantDetail = () => {
   };
 
   // Cancelar edición
-  const handleCancelEdit = () => {
+  const handleCancelEdit = async () => {
     if (isEditMode) {
-      setIsEditing(false);
-      // Recargar datos originales
-      window.location.reload();
+      if (confirm('¿Deseas cancelar los cambios? Se perderán todos los datos no guardados.')) {
+        try {
+          // Recargar datos originales sin recargar toda la página
+          setLoading(true);
+          const data = await merchantService.getMerchantById(id);
+          setFormData({
+            name: data.name || '',
+            business: data.business || '',
+            address: data.address || '',
+            address_references: data.address_references || '',
+            delegation: data.delegation || '',
+            latitude: data.latitude || '',
+            longitude: data.longitude || '',
+            schedule_start: data.schedule_start || '',
+            schedule_end: data.schedule_end || '',
+            organization_id: data.organization_id || '',
+            stand_type: data.stand_type || 'semifijo',
+            operating_days: data.operating_days || [],
+            license_number: data.license_number || '',
+            notes: data.notes || '',
+          });
+          if (data.stall_photo_url) {
+            setStallPhotoPreview(data.stall_photo_url);
+          }
+          if (data.documents && Array.isArray(data.documents)) {
+            setExistingDocuments(data.documents);
+          }
+          // Limpiar archivos nuevos
+          setStallPhoto(null);
+          setDocuments([]);
+          setIsEditing(false);
+          setError(null);
+        } catch (err) {
+          setError('Error al recargar los datos originales');
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      }
     } else {
       navigate('/app/merchants');
     }
